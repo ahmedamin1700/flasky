@@ -1,12 +1,13 @@
 from flask import (Flask, render_template, session, redirect, url_for, flash)
 from flask_wtf import FlaskForm
-from flask_mail import Mail
+from flask_mail import Mail, Message
 from flask_sqlalchemy import SQLAlchemy
 from flask_bootstrap import Bootstrap
 from wtforms import StringField, SubmitField
 from wtforms.validators import Required
 from flask_script import Manager, Shell
 from flask_migrate import Migrate, MigrateCommand
+from threading import Thread
 
 
 app = Flask(__name__)
@@ -19,6 +20,9 @@ app.config['MAIL_USERNAME'] = 'ahmedamin1700@gmail.com'
 app.config['MAIL_PASSWORD'] = 'Ahmed@6695659'
 app.config['MAIL_USE_TLS'] = False
 app.config['MAIL_USE_SSL'] = True
+app.config['FLASKY_MAIL_SUBJECT_PREFIX'] = '[Flasky]'
+app.config['FLASKY_MAIL_SENDER'] = 'Flasky Admin <flasky@example.com>'
+app.config['FLASKY_ADMIN'] = 'ahmedamin1700@gmail.com'
 manager = Manager(app)
 bootstrap = Bootstrap(app)
 db = SQLAlchemy(app)
@@ -30,6 +34,18 @@ mail = Mail(app)
 def make_shell_context():
     return dict(app=app, db=db, User=User, Role=Role)
 manager.add_command("shell", Shell(make_context=make_shell_context))
+
+def send_async_email(app, msg):
+    with app.app_context():
+        mail.send(msg)
+
+def send_mail(to, subject, template, **kwargs):
+    msg = Message(app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + subject,
+                sender=app.config['FLASKY_MAIL_SENDER'], recipients=[to])
+    msg.body = render_template(template + '.txt', **kwargs)
+    msg.html = render_template(template + '.html', **kwargs)
+    thr = Thread(target=send_async_email, args=[app, msg])
+    mail.send(msg)
 
 """ Forms """
 class NameForm(FlaskForm):
@@ -65,6 +81,9 @@ def index():
             user = User(username=form.name.data)
             db.session.add(user)
             session["known"] = False
+            if app.config["FLASKY_ADMIN"]:
+                send_mail(app.config["FLASKY_ADMIN"],
+                    'New User', 'mail/new_user', user=user)
         else:
             session["known"] = True
         session["name"] = form.name.data
